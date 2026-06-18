@@ -49,6 +49,15 @@ public class User {
     @Builder.Default
     private Boolean isActive = true;
 
+    // ── Password Reset ─────────────────────────────────────
+    // Token sent in reset email — valid for 1 hour only.
+    // Cleared after password is successfully changed.
+    @Column(name = "reset_token", length = 100)
+    private String resetToken;
+
+    @Column(name = "reset_token_expires_at")
+    private LocalDateTime resetTokenExpiresAt;
+
     @CreationTimestamp
     @Column(name = "joined_at", updatable = false)
     private LocalDateTime joinedAt;

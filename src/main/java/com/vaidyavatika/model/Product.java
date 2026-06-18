@@ -33,12 +33,13 @@ public class Product {
     @Column(nullable = false)
     private Double price;
 
-    // TEXT instead of VARCHAR(500) — stores base64 image data URLs
-    @Column(name = "image_url", columnDefinition = "TEXT")
+    // Cloudinary HTTPS URL — short string, VARCHAR(500) is plenty
+    @Column(name = "image_url", length = 500)
     private String imageUrl;
 
-    // JSON array of { name, type, dataUrl } — MEDIUMTEXT supports up to 16MB
-    @Column(name = "media_files", columnDefinition = "MEDIUMTEXT")
+    // Lean JSON array of { name, type, url, size } — only URLs, no base64 blobs.
+    // TEXT (64KB) is sufficient; even 50 products x a 200-char URL = ~10KB.
+    @Column(name = "media_files", columnDefinition = "TEXT")
     private String mediaFiles;
 
     @NotBlank(message = "Category is required")

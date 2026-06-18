@@ -1,6 +1,7 @@
 package com.vaidyavatika.config;
 
 import com.vaidyavatika.security.JwtFilter;
+import com.vaidyavatika.security.RateLimitFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,6 +20,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtFilter jwtFilter;
+    private final RateLimitFilter rateLimitFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -32,6 +34,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/users/login").permitAll()
                         .requestMatchers(HttpMethod.GET,  "/api/v1/products/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/admin/verify").permitAll()
+                        .requestMatchers(HttpMethod.GET,  "/api/v1/users/verify").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/users/resend-verification").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/users/forgot-password").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/users/reset-password").permitAll()
 
                         // ── Admin-only endpoints ──
                         .requestMatchers(HttpMethod.POST,   "/api/v1/products/**").hasRole("ADMIN")
@@ -44,6 +50,8 @@ public class SecurityConfig {
                         // ── Authenticated user endpoints ──
                         .anyRequest().authenticated()
                 )
+                // Rate limiting runs first, before JWT is even checked
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

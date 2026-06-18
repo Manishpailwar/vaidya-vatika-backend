@@ -43,6 +43,13 @@ public class JwtFilter extends OncePerRequestFilter {
 
                 var auth = new UsernamePasswordAuthenticationToken(subject, null, authorities);
                 SecurityContextHolder.getContext().setAuthentication(auth);
+
+                // FIXED: Store the caller's email as a request attribute so
+                // controllers (OrderController, UserController) can verify
+                // ownership without re-parsing the token themselves.
+                if (!isAdmin) {
+                    request.setAttribute("callerEmail", subject);
+                }
             }
         }
 

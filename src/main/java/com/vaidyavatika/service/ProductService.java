@@ -71,13 +71,26 @@ public class ProductService {
         log.info("Soft-deleted product id: {}", id);
     }
 
-    public void reduceStock(Long productId, int quantity) {
+    // FIXED: parameter changed from int to Integer so it matches the
+    // OrderItemRequest.quantity field type (Integer) in OrderService.
+    public void reduceStock(Long productId, Integer quantity) {
         Product product = getProductById(productId);
         if (product.getStock() < quantity) {
             throw new RuntimeException("Insufficient stock for product: " + product.getName());
         }
         product.setStock(product.getStock() - quantity);
         productRepository.save(product);
+        log.info("Reduced stock for product {} by {}. Remaining: {}", productId, quantity, product.getStock());
+    }
+
+    // ADDED: called by OrderService.cancelOrder() to return stock when a
+    // customer cancels. Without this, every cancellation permanently shrinks
+    // inventory even though no goods were shipped.
+    public void restoreStock(Long productId, Integer quantity) {
+        Product product = getProductById(productId);
+        product.setStock(product.getStock() + quantity);
+        productRepository.save(product);
+        log.info("Restored stock for product {} by {}. New total: {}", productId, quantity, product.getStock());
     }
 
     public List<Product> getLowStockProducts() {

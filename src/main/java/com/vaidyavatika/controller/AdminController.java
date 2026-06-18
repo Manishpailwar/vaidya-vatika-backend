@@ -1,71 +1,71 @@
 package com.vaidyavatika.controller;
 
-import com.vaidyavatika.model.Order;
-import com.vaidyavatika.model.Product;
+import com.vaidyavatika.repository.OrderRepository;
+import com.vaidyavatika.repository.ProductRepository;
 import com.vaidyavatika.security.JwtUtil;
-import com.vaidyavatika.service.OrderService;
-import com.vaidyavatika.service.ProductService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
+@Slf4j
 public class AdminController {
 
-    private final ProductService productService;
-    private final OrderService orderService;
     private final JwtUtil jwtUtil;
+    private final OrderRepository orderRepository;
+    private final ProductRepository productRepository;
 
     @Value("${app.admin.password}")
     private String adminPassword;
 
-    // ── DASHBOARD STATS ───────────────────────────────────
-    @GetMapping("/stats")
-    public ResponseEntity<Map<String, Object>> getDashboardStats() {
-        List<Product> products = productService.getAllProducts();
-        List<Order> orders = orderService.getAllOrders();
-
-        long totalRevenue = orders.stream()
-                .filter(o -> !o.getStatus().equals("CANCELLED"))
-                .mapToLong(o -> o.getTotalAmount().longValue())
-                .sum();
-
-        long pendingOrders = orders.stream()
-                .filter(o -> o.getStatus().equals("PLACED") || o.getStatus().equals("PROCESSING"))
-                .count();
-
-        Map<String, Object> stats = new HashMap<>();
-        stats.put("totalProducts", products.size());
-        stats.put("totalOrders", orders.size());
-        stats.put("pendingOrders", pendingOrders);
-        stats.put("totalRevenue", totalRevenue);
-        stats.put("lowStockProducts", productService.getLowStockProducts().size());
-
-        return ResponseEntity.ok(stats);
-    }
-
-    // ── VERIFY ADMIN PASSWORD → returns JWT ──────────────
+    // ── ADMIN LOGIN ───────────────────────────────────────
     @PostMapping("/verify")
     public ResponseEntity<Map<String, Object>> verifyAdmin(@RequestBody Map<String, String> body) {
         String password = body.get("password");
-        boolean valid = adminPassword.equals(password);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", valid);
-        response.put("message", valid ? "Admin access granted" : "Invalid admin password");
-
-        if (valid) {
-            // Issue a JWT with ADMIN role
-            response.put("token", jwtUtil.generateAdminToken());
+        if (password == null || !password.equals(adminPassword)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Invalid admin password"));
         }
+        String token = jwtUtil.generateAdminToken();
+        return ResponseEntity.ok(Map.of("valid", true, "token", token));
+    }
 
-        return ResponseEntity.ok(response);
+    // ── VERIFY ADMIN TOKEN ────────────────────────────────
+    @GetMapping("/verify-token")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Boolean>> verifyToken() {
+        return ResponseEntity.ok(Map.of("valid", true));
+    }
+
+    // ── ADMIN STATS ───────────────────────────────────────
+    @GetMapping("/stats")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> getStats() {
+        long totalProducts = productRepository.count();
+        long totalOrders   = orderRepository.count();
+        long pendingOrders = orderRepository.findByStatusOrderByCreatedAtDesc("PLACED").size()
+                + orderRepository.findByStatusOrderByCreatedAtDesc("PROCESSING").size();
+        long lowStockCount = productRepository.findByStockLessThanAndIsActiveTrue(10).size();
+
+        double totalRevenue = orderRepository.findAll().stream()
+                .filter(o -> !"CANCELLED".equals(o.getStatus()))
+                .mapToDouble(o -> o.getTotalAmount() != null ? o.getTotalAmount() : 0)
+                .sum();
+
+        return ResponseEntity.ok(Map.of(
+                "totalProducts",  totalProducts,
+                "totalOrders",    totalOrders,
+                "pendingOrders",  pendingOrders,
+                "lowStockProducts", lowStockCount,
+                "totalRevenue",   Math.round(totalRevenue)
+        ));
     }
 }

@@ -3,6 +3,7 @@ package com.vaidyavatika.service;
 import com.vaidyavatika.dto.PlaceOrderRequest;
 import com.vaidyavatika.exception.ResourceNotFoundException;
 import com.vaidyavatika.model.Order;
+import com.vaidyavatika.model.Product;
 import com.vaidyavatika.model.OrderItem;
 import com.vaidyavatika.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,25 +22,44 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final ProductService productService;
+    private final EmailService emailService;
 
-    // Place a new order
+    // ── PLACE ORDER ───────────────────────────────────────
     @Transactional
     public Order placeOrder(PlaceOrderRequest request) {
         log.info("Placing order for: {}", request.getCustomerEmail());
 
-        // Build order items from request
+        // Step 1 — Reduce stock first (inside transaction)
+        for (PlaceOrderRequest.OrderItemRequest itemReq : request.getItems()) {
+            if (itemReq.getProductId() != null) {
+                productService.reduceStock(itemReq.getProductId(), itemReq.getQuantity());
+            }
+        }
+
+        // Step 2 — Build order items using REAL prices from the database
         List<OrderItem> items = request.getItems().stream().map(itemReq -> {
+            Product product = productService.getProductById(itemReq.getProductId());
+            double realPrice = product.getPrice();
+            int    qty       = itemReq.getQuantity();
+
             OrderItem item = new OrderItem();
-            item.setProductId(itemReq.getProductId());
-            item.setProductName(itemReq.getProductName());
+            item.setProductId(product.getId());
+            item.setProductName(product.getName());
             item.setProductImage(itemReq.getProductImage());
-            item.setQuantity(itemReq.getQuantity());
-            item.setUnitPrice(itemReq.getUnitPrice());
-            item.setTotalPrice(itemReq.getUnitPrice() * itemReq.getQuantity());
+            item.setQuantity(qty);
+            item.setUnitPrice(realPrice);
+            item.setTotalPrice(realPrice * qty);
             return item;
         }).collect(Collectors.toList());
 
-        // Build the order
+        // Step 3 — Recalculate grand total server-side
+        double subtotal   = items.stream().mapToDouble(OrderItem::getTotalPrice).sum();
+        double shipping   = subtotal > 499 ? 0 : 49;
+        double gst        = Math.round(subtotal * 0.05);
+        double grandTotal = subtotal + shipping + gst;
+
+        log.info("Order total: subtotal={} shipping={} gst={} total={}", subtotal, shipping, gst, grandTotal);
+
         Order order = Order.builder()
                 .customerName(request.getCustomerName())
                 .customerEmail(request.getCustomerEmail())
@@ -47,76 +67,92 @@ public class OrderService {
                 .address(request.getAddress())
                 .city(request.getCity())
                 .pincode(request.getPincode())
-                .totalAmount(request.getTotalAmount())
+                .totalAmount(grandTotal)
                 .paymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : "COD")
                 .status("PLACED")
                 .build();
 
-        // Link each item back to the order
         items.forEach(item -> item.setOrder(order));
         order.setItems(items);
 
         Order savedOrder = orderRepository.save(order);
-
-        // Reduce stock for each product
-        request.getItems().forEach(itemReq -> {
-            if (itemReq.getProductId() != null) {
-                try {
-                    productService.reduceStock(itemReq.getProductId(), itemReq.getQuantity());
-                } catch (Exception e) {
-                    log.warn("Could not reduce stock for product {}: {}", itemReq.getProductId(), e.getMessage());
-                }
-            }
-        });
-
         log.info("Order placed successfully with id: {}", savedOrder.getId());
+
+        // Send confirmation email async — does not affect order placement
+        emailService.sendOrderConfirmationEmail(savedOrder);
+
         return savedOrder;
     }
 
-    // Get all orders (admin)
+    // ── GET ALL ORDERS (Admin) ────────────────────────────
     public List<Order> getAllOrders() {
         return orderRepository.findAllByOrderByCreatedAtDesc();
     }
 
-    // Get orders by customer email
     public List<Order> getOrdersByEmail(String email) {
         return orderRepository.findByCustomerEmailOrderByCreatedAtDesc(email);
     }
 
-    // Get single order by ID
-    public Order getOrderById(Long id) {
-        return orderRepository.findById(id)
+    // ── GET SINGLE ORDER ──────────────────────────────────
+    public Order getOrderById(Long id, String callerEmail, boolean isAdmin) {
+        Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
+
+        if (!isAdmin) {
+            if (callerEmail == null || !order.getCustomerEmail().equalsIgnoreCase(callerEmail)) {
+                throw new ResourceNotFoundException("Order not found with id: " + id);
+            }
+        }
+
+        return order;
     }
 
-    // Cancel order (customer)
+    // ── CANCEL ORDER (Customer) ───────────────────────────
     @Transactional
-    public Order cancelOrder(Long id) {
-        Order order = getOrderById(id);
+    public Order cancelOrder(Long id, String callerEmail) {
+        Order order = getOrderById(id, callerEmail, false);
+
         if (!order.getStatus().equals("PLACED")) {
-            throw new RuntimeException("Order can only be cancelled when status is PLACED. Current status: " + order.getStatus());
+            throw new RuntimeException(
+                    "Order can only be cancelled when status is PLACED. Current status: " + order.getStatus());
         }
+
         order.setStatus("CANCELLED");
         order.setUpdatedAt(LocalDateTime.now());
-        log.info("Order {} cancelled", id);
+
+        order.getItems().forEach(item -> {
+            if (item.getProductId() != null) {
+                try {
+                    productService.restoreStock(item.getProductId(), item.getQuantity());
+                } catch (Exception e) {
+                    log.warn("Could not restore stock for product {}: {}", item.getProductId(), e.getMessage());
+                }
+            }
+        });
+
+        log.info("Order {} cancelled by {}", id, callerEmail);
         return orderRepository.save(order);
     }
 
-    // Update order status (admin)
+    // ── UPDATE ORDER STATUS (Admin) ───────────────────────
     @Transactional
     public Order updateStatus(Long id, String status) {
         List<String> validStatuses = List.of("PLACED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED");
         if (!validStatuses.contains(status)) {
             throw new RuntimeException("Invalid status: " + status + ". Valid values: " + validStatuses);
         }
-        Order order = getOrderById(id);
+        Order order = getOrderById(id, null, true);
         order.setStatus(status);
         order.setUpdatedAt(LocalDateTime.now());
-        log.info("Order {} status updated to {}", id, status);
-        return orderRepository.save(order);
+        log.info("Order {} status updated to {} by admin", id, status);
+        Order saved = orderRepository.save(order);
+
+        // Send status update email for SHIPPED and DELIVERED only
+        emailService.sendOrderStatusEmail(saved);
+
+        return saved;
     }
 
-    // Get orders by status (admin)
     public List<Order> getOrdersByStatus(String status) {
         return orderRepository.findByStatusOrderByCreatedAtDesc(status);
     }
