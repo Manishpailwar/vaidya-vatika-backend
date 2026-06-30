@@ -97,9 +97,11 @@ public class EmailService {
 
             String trackLink = frontendUrl + "/track/" + order.getId();
 
-            // Build items rows
+            // ── Build items rows ───────────────────────────────
             StringBuilder itemsHtml = new StringBuilder();
+            double itemsSubtotal = 0;
             for (OrderItem item : order.getItems()) {
+                itemsSubtotal += item.getTotalPrice();
                 itemsHtml.append("""
                     <tr>
                       <td style="padding: 12px 16px; border-bottom: 1px solid #f0f0f0;">
@@ -116,6 +118,29 @@ public class EmailService {
                         item.getUnitPrice(),
                         item.getTotalPrice()
                 ));
+            }
+
+            // ── Recalculate breakdown for invoice ──────────────
+            double shipping  = itemsSubtotal > 499 ? 0 : 49;
+            double gst       = Math.round(itemsSubtotal * 0.05);
+            double discount  = order.getDiscountAmount() != null ? order.getDiscountAmount() : 0;
+            double grandTotal = order.getTotalAmount();
+
+            String shippingStr = shipping == 0 ? "FREE" : "₹" + (int) shipping;
+
+            // ── Coupon row (only if a coupon was used) ─────────
+            String couponRow = "";
+            if (order.getCouponCode() != null && discount > 0) {
+                couponRow = """
+                    <tr style="background: #f0faf0;">
+                      <td style="padding: 10px 16px; color: #2D5016; font-size: 13px;">
+                        🎟 Coupon <strong>%s</strong>
+                      </td>
+                      <td style="padding: 10px 16px; text-align: right; color: #2D5016; font-weight: 700; font-size: 13px;">
+                        −₹%.0f
+                      </td>
+                    </tr>
+                    """.formatted(order.getCouponCode(), discount);
             }
 
             String html = """
@@ -148,8 +173,8 @@ public class EmailService {
                     </div>
 
                     <!-- Items table -->
-                    <h3 style="color: #333; font-size: 16px; margin: 0 0 12px;">Order Items</h3>
-                    <table style="width: 100%%; border-collapse: collapse; margin-bottom: 16px; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
+                    <h3 style="color: #333; font-size: 16px; margin: 0 0 12px;">🛒 Items Ordered</h3>
+                    <table style="width: 100%%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
                       <thead>
                         <tr style="background: #f5f5f5;">
                           <th style="padding: 10px 16px; text-align: left; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px;">Product</th>
@@ -161,33 +186,51 @@ public class EmailService {
                       </tbody>
                     </table>
 
-                    <!-- Total -->
-                    <div style="background: #2D5016; border-radius: 10px; padding: 16px 20px; display: flex; justify-content: space-between; margin-bottom: 28px;">
-                      <span style="color: rgba(255,255,255,0.8); font-size: 14px; font-weight: 600;">Total Amount</span>
-                      <span style="color: #fff; font-size: 20px; font-weight: 700;">₹%.0f</span>
-                    </div>
+                    <!-- Invoice Breakdown -->
+                    <h3 style="color: #333; font-size: 16px; margin: 0 0 12px;">🧾 Invoice Breakdown</h3>
+                    <table style="width: 100%%; border-collapse: collapse; margin-bottom: 24px; border: 1px solid #eee; border-radius: 8px; overflow: hidden;">
+                      <tbody>
+                        <tr>
+                          <td style="padding: 10px 16px; color: #555; font-size: 13px; border-bottom: 1px solid #f0f0f0;">Items Subtotal</td>
+                          <td style="padding: 10px 16px; text-align: right; color: #333; font-size: 13px; border-bottom: 1px solid #f0f0f0;">₹%.0f</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 10px 16px; color: #555; font-size: 13px; border-bottom: 1px solid #f0f0f0;">Shipping</td>
+                          <td style="padding: 10px 16px; text-align: right; color: #333; font-size: 13px; border-bottom: 1px solid #f0f0f0;">%s</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 10px 16px; color: #555; font-size: 13px; border-bottom: 1px solid #f0f0f0;">GST (5%%)</td>
+                          <td style="padding: 10px 16px; text-align: right; color: #333; font-size: 13px; border-bottom: 1px solid #f0f0f0;">₹%.0f</td>
+                        </tr>
+                        %s
+                        <tr style="background: #2D5016;">
+                          <td style="padding: 14px 16px; color: #fff; font-size: 15px; font-weight: 700;">Total Paid</td>
+                          <td style="padding: 14px 16px; text-align: right; color: #fff; font-size: 18px; font-weight: 700;">₹%.0f</td>
+                        </tr>
+                      </tbody>
+                    </table>
 
                     <!-- Delivery details -->
-                    <h3 style="color: #333; font-size: 16px; margin: 0 0 12px;">Delivery Details</h3>
+                    <h3 style="color: #333; font-size: 16px; margin: 0 0 12px;">📦 Delivery Details</h3>
                     <div style="background: #fafafa; border-radius: 12px; padding: 20px 24px; border: 1px solid #eee; margin-bottom: 28px;">
-                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <div>
-                          <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px;">Name</div>
-                          <div style="font-weight: 600; color: #333; font-size: 14px;">%s</div>
-                        </div>
-                        <div>
-                          <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px;">Phone</div>
-                          <div style="font-weight: 600; color: #333; font-size: 14px;">%s</div>
-                        </div>
-                        <div style="grid-column: 1/-1;">
-                          <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px;">Address</div>
-                          <div style="font-weight: 600; color: #333; font-size: 14px;">%s, %s — %s</div>
-                        </div>
-                        <div>
-                          <div style="font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px;">Payment</div>
-                          <div style="font-weight: 600; color: #333; font-size: 14px;">%s</div>
-                        </div>
-                      </div>
+                      <table style="width: 100%%; border-collapse: collapse;">
+                        <tr>
+                          <td style="padding: 6px 0; font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; width: 100px;">Name</td>
+                          <td style="padding: 6px 0; font-weight: 600; color: #333; font-size: 14px;">%s</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px;">Phone</td>
+                          <td style="padding: 6px 0; font-weight: 600; color: #333; font-size: 14px;">%s</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; vertical-align: top;">Address</td>
+                          <td style="padding: 6px 0; font-weight: 600; color: #333; font-size: 14px;">%s, %s — %s</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px;">Payment</td>
+                          <td style="padding: 6px 0; font-weight: 600; color: #333; font-size: 14px;">%s</td>
+                        </tr>
+                      </table>
                     </div>
 
                     <!-- Footer note -->
@@ -199,7 +242,7 @@ public class EmailService {
 
                   <!-- Footer -->
                   <div style="background: #f5f5f5; padding: 20px 40px; text-align: center; border-radius: 0 0 12px 12px; border-top: 1px solid #eee;">
-                    <p style="color: #aaa; font-size: 12px; margin: 0;">© 2025 Vaidya Vatika · Pure Ayurveda</p>
+                    <p style="color: #aaa; font-size: 12px; margin: 0;">© 2025 Vaidya Vatika · Pure Ayurveda · This is your billing invoice, please keep it for your records.</p>
                   </div>
                 </div>
                 """.formatted(
@@ -207,12 +250,14 @@ public class EmailService {
                     order.getId(),
                     trackLink,
                     itemsHtml.toString(),
-                    order.getTotalAmount(),
+                    itemsSubtotal,
+                    shippingStr,
+                    gst,
+                    couponRow,
+                    grandTotal,
                     order.getCustomerName(),
                     order.getCustomerPhone(),
-                    order.getAddress(),
-                    order.getCity(),
-                    order.getPincode(),
+                    order.getAddress(), order.getCity(), order.getPincode(),
                     order.getPaymentMethod() != null ? order.getPaymentMethod() : "COD",
                     fromEmail, fromEmail
             );

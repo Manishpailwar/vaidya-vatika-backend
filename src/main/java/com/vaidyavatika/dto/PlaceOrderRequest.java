@@ -28,6 +28,8 @@ public class PlaceOrderRequest {
 
     private Double totalAmount;
     private String paymentMethod;
+    private String couponCode;
+    private Double discountAmount;
 
     @NotNull(message = "Order items are required")
     private List<OrderItemRequest> items;

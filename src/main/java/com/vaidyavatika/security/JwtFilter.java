@@ -1,5 +1,6 @@
 package com.vaidyavatika.security;
 
+import com.vaidyavatika.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,6 +22,7 @@ import java.util.List;
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
+    private final UserRepository userRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -49,6 +51,9 @@ public class JwtFilter extends OncePerRequestFilter {
                 // ownership without re-parsing the token themselves.
                 if (!isAdmin) {
                     request.setAttribute("callerEmail", subject);
+                    // Store name for review/profile endpoints
+                    userRepository.findByEmail(subject)
+                            .ifPresent(user -> request.setAttribute("callerName", user.getName()));
                 }
             }
         }

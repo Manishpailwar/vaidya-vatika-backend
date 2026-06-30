@@ -6,6 +6,7 @@ import com.vaidyavatika.model.Order;
 import com.vaidyavatika.model.Product;
 import com.vaidyavatika.model.OrderItem;
 import com.vaidyavatika.repository.OrderRepository;
+import com.vaidyavatika.service.CouponService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -23,6 +25,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final ProductService productService;
     private final EmailService emailService;
+    private final CouponService couponService;
 
     // ── PLACE ORDER ───────────────────────────────────────
     @Transactional
@@ -56,9 +59,28 @@ public class OrderService {
         double subtotal   = items.stream().mapToDouble(OrderItem::getTotalPrice).sum();
         double shipping   = subtotal > 499 ? 0 : 49;
         double gst        = Math.round(subtotal * 0.05);
-        double grandTotal = subtotal + shipping + gst;
+        double beforeDiscount = subtotal + shipping + gst;
 
-        log.info("Order total: subtotal={} shipping={} gst={} total={}", subtotal, shipping, gst, grandTotal);
+        // Step 4 — Apply coupon discount if provided (validated server-side)
+        double discount = 0;
+        String appliedCouponCode = null;
+        if (request.getCouponCode() != null && !request.getCouponCode().isBlank()) {
+            try {
+                Map<String, Object> couponResult = couponService.validateCoupon(
+                        request.getCouponCode(), subtotal);
+                discount = ((Number) couponResult.get("discountAmount")).doubleValue();
+                appliedCouponCode = request.getCouponCode().toUpperCase();
+                couponService.applyCoupon(appliedCouponCode);
+                log.info("Coupon {} applied — discount: ₹{}", appliedCouponCode, discount);
+            } catch (Exception e) {
+                log.warn("Coupon {} rejected during order placement: {}", request.getCouponCode(), e.getMessage());
+                throw new RuntimeException("Coupon error: " + e.getMessage());
+            }
+        }
+
+        double grandTotal = Math.max(0, beforeDiscount - discount);
+
+        log.info("Order total: subtotal={} shipping={} gst={} discount={} total={}", subtotal, shipping, gst, discount, grandTotal);
 
         Order order = Order.builder()
                 .customerName(request.getCustomerName())
@@ -68,6 +90,8 @@ public class OrderService {
                 .city(request.getCity())
                 .pincode(request.getPincode())
                 .totalAmount(grandTotal)
+                .discountAmount(discount)
+                .couponCode(appliedCouponCode)
                 .paymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : "COD")
                 .status("PLACED")
                 .build();
@@ -129,6 +153,15 @@ public class OrderService {
                 }
             }
         });
+
+        // Restore coupon usage count if one was applied to this order
+        if (order.getCouponCode() != null && !order.getCouponCode().isBlank()) {
+            try {
+                couponService.restoreCoupon(order.getCouponCode());
+            } catch (Exception e) {
+                log.warn("Could not restore coupon usage for {}: {}", order.getCouponCode(), e.getMessage());
+            }
+        }
 
         log.info("Order {} cancelled by {}", id, callerEmail);
         return orderRepository.save(order);

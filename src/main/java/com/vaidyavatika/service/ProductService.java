@@ -45,6 +45,10 @@ public class ProductService {
                 .category(request.getCategory())
                 .stock(request.getStock())
                 .badge(request.getBadge())
+                .details(request.getDetails())
+                .howToUse(request.getHowToUse())
+                .keyIngredients(request.getKeyIngredients())
+                .specifications(request.getSpecifications())
                 .isActive(true)
                 .build();
         return productRepository.save(product);
@@ -60,6 +64,10 @@ public class ProductService {
         product.setCategory(request.getCategory());
         product.setStock(request.getStock());
         product.setBadge(request.getBadge());
+        product.setDetails(request.getDetails());
+        product.setHowToUse(request.getHowToUse());
+        product.setKeyIngredients(request.getKeyIngredients());
+        product.setSpecifications(request.getSpecifications());
         log.info("Updated product id: {}", id);
         return productRepository.save(product);
     }
@@ -71,8 +79,6 @@ public class ProductService {
         log.info("Soft-deleted product id: {}", id);
     }
 
-    // FIXED: parameter changed from int to Integer so it matches the
-    // OrderItemRequest.quantity field type (Integer) in OrderService.
     public void reduceStock(Long productId, Integer quantity) {
         Product product = getProductById(productId);
         if (product.getStock() < quantity) {
@@ -83,9 +89,6 @@ public class ProductService {
         log.info("Reduced stock for product {} by {}. Remaining: {}", productId, quantity, product.getStock());
     }
 
-    // ADDED: called by OrderService.cancelOrder() to return stock when a
-    // customer cancels. Without this, every cancellation permanently shrinks
-    // inventory even though no goods were shipped.
     public void restoreStock(Long productId, Integer quantity) {
         Product product = getProductById(productId);
         product.setStock(product.getStock() + quantity);
@@ -97,11 +100,6 @@ public class ProductService {
         return productRepository.findByStockLessThanAndIsActiveTrue(10);
     }
 
-    /**
-     * image_url stores ONLY plain http/https URLs — never base64.
-     * Uploaded file base64 data lives in media_files (MEDIUMTEXT).
-     * Putting base64 into image_url causes Data truncation errors.
-     */
     private String resolveImageUrl(String imageUrl) {
         if (imageUrl != null && !imageUrl.isBlank() && imageUrl.startsWith("http")) {
             return imageUrl;

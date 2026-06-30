@@ -33,12 +33,11 @@ public class Product {
     @Column(nullable = false)
     private Double price;
 
-    // Cloudinary HTTPS URL — short string, VARCHAR(500) is plenty
+    // Cloudinary HTTPS URL
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 
-    // Lean JSON array of { name, type, url, size } — only URLs, no base64 blobs.
-    // TEXT (64KB) is sufficient; even 50 products x a 200-char URL = ~10KB.
+    // Lean JSON array of { name, type, url, size }
     @Column(name = "media_files", columnDefinition = "TEXT")
     private String mediaFiles;
 
@@ -57,6 +56,26 @@ public class Product {
     @Column(name = "is_active")
     @Builder.Default
     private Boolean isActive = true;
+
+    // ── Rich product content tabs ─────────────────────────
+    // All stored as TEXT — admin can write detailed descriptions.
+    // Shown as accordion/tabs on the product detail page.
+
+    // Full product details — ingredients, sourcing, certifications etc.
+    @Column(name = "details", columnDefinition = "TEXT")
+    private String details;
+
+    // Step by step usage instructions
+    @Column(name = "how_to_use", columnDefinition = "TEXT")
+    private String howToUse;
+
+    // Key ingredients list — one per line or comma separated
+    @Column(name = "key_ingredients", columnDefinition = "TEXT")
+    private String keyIngredients;
+
+    // Weight, dimensions, shelf life, storage etc.
+    @Column(name = "specifications", columnDefinition = "TEXT")
+    private String specifications;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

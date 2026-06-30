@@ -16,10 +16,7 @@ public class ProductRequest {
     @Positive(message = "Price must be positive")
     private Double price;
 
-    // Primary image URL (used as fallback / thumbnail)
     private String imageUrl;
-
-    // JSON string: array of { name, type, dataUrl } from the frontend uploader
     private String mediaFiles;
 
     @NotBlank(message = "Category is required")
@@ -30,4 +27,10 @@ public class ProductRequest {
     private Integer stock;
 
     private String badge;
+
+    // ── Rich content tabs ─────────────────────────────────
+    private String details;
+    private String howToUse;
+    private String keyIngredients;
+    private String specifications;
 }

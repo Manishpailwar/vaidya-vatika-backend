@@ -14,16 +14,25 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/api/**")
-                        // Allow React frontend (both dev and production)
                         .allowedOrigins(
-                            "http://localhost:3000",
-                            "http://localhost:5173",
-                            "https://vaidyavatika.com",
-                            "https://www.vaidyavatika.com"
+                                "http://localhost:3000",
+                                "http://localhost:5173",
+                                "https://vaidyavatika.com",
+                                "https://www.vaidyavatika.com"
                         )
                         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                        .allowedHeaders("*")
-                        .allowCredentials(true);
+                        // Only allow headers that the app actually uses
+                        // instead of wildcard "*"
+                        .allowedHeaders(
+                                "Authorization",
+                                "Content-Type",
+                                "Accept",
+                                "X-Requested-With",
+                                "Origin"
+                        )
+                        .exposedHeaders("Authorization")
+                        .allowCredentials(true)
+                        .maxAge(3600); // cache preflight for 1 hour
             }
         };
     }

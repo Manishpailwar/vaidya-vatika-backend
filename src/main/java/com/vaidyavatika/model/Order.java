@@ -48,6 +48,13 @@ public class Order {
     @Column(name = "total_amount", nullable = false)
     private Double totalAmount;
 
+    @Column(name = "discount_amount")
+    @Builder.Default
+    private Double discountAmount = 0.0;
+
+    @Column(name = "coupon_code", length = 50)
+    private String couponCode;
+
     @Column(name = "payment_method", length = 50)
     @Builder.Default
     private String paymentMethod = "COD";

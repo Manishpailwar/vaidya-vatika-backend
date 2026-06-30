@@ -38,6 +38,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/users/resend-verification").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/users/forgot-password").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/users/reset-password").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/coupons/validate").permitAll()
+                        .requestMatchers(HttpMethod.GET,  "/api/v1/reviews/product/**").permitAll()
 
                         // ── Admin-only endpoints ──
                         .requestMatchers(HttpMethod.POST,   "/api/v1/products/**").hasRole("ADMIN")
@@ -48,6 +50,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT,  "/api/v1/orders/*/status").hasRole("ADMIN")
 
                         // ── Authenticated user endpoints ──
+                        .requestMatchers(HttpMethod.POST, "/api/v1/orders").authenticated()
+                        .requestMatchers(HttpMethod.GET,  "/api/v1/orders/my").authenticated()
+                        .requestMatchers(HttpMethod.PUT,  "/api/v1/orders/*/cancel").authenticated()
+
+                        // ── Everything else requires auth too ──
                         .anyRequest().authenticated()
                 )
                 // Rate limiting runs first, before JWT is even checked

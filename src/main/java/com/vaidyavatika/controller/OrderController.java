@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,8 +23,22 @@ public class OrderController {
     private final OrderService orderService;
 
     // ── PLACE ORDER ───────────────────────────────────────
+    // Requires a valid user JWT. customerEmail is taken from the JWT itself —
+    // the value in the request body is ignored — so a user cannot place an
+    // order on behalf of someone else.
     @PostMapping
-    public ResponseEntity<Order> placeOrder(@Valid @RequestBody PlaceOrderRequest request) {
+    public ResponseEntity<Order> placeOrder(
+            @Valid @RequestBody PlaceOrderRequest request,
+            HttpServletRequest httpRequest) {
+
+        String callerEmail = (String) httpRequest.getAttribute("callerEmail");
+        if (callerEmail == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        // Override whatever email the client sent — always use the JWT identity
+        request.setCustomerEmail(callerEmail);
+
         Order order = orderService.placeOrder(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(order);
     }
@@ -50,18 +65,18 @@ public class OrderController {
     }
 
     // ── GET SINGLE ORDER ──────────────────────────────────
-    // FIXED: callerEmail (from JWT) and isAdmin flag passed to the service so
-    // it can enforce: admins see any order, customers only see their own.
+    // Admins can view any order. Regular users can only view their own.
+    // isAdmin is determined from the JWT role set in SecurityContext by JwtFilter —
+    // never from request body or params.
     @GetMapping("/{id}")
     public ResponseEntity<Order> getOrder(
             @PathVariable Long id,
             HttpServletRequest httpRequest) {
         String callerEmail = (String) httpRequest.getAttribute("callerEmail");
-        boolean isAdmin = httpRequest.getAttribute("callerEmail") == null
-                && httpRequest.getUserPrincipal() != null;
-        // Cleaner: ask Spring Security directly
-        boolean adminCaller = httpRequest.isUserInRole("ADMIN");
-        return ResponseEntity.ok(orderService.getOrderById(id, callerEmail, adminCaller));
+        boolean isAdmin = SecurityContextHolder.getContext().getAuthentication()
+                .getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        return ResponseEntity.ok(orderService.getOrderById(id, callerEmail, isAdmin));
     }
 
     // ── CANCEL ORDER (Customer) ───────────────────────────
